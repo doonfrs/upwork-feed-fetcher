@@ -5,8 +5,8 @@ Drives a real Chrome (via [go-rod](https://github.com/go-rod/rod)) to export Upw
 data the page already loaded (`window.__NUXT__` / the Nuxt3 `__NUXT_DATA__` payload),
 so there is no fragile HTML scraping.
 
-> Status: **Step 1 — CLI vertical slice.** GUI mode (double-click), hidden/off-screen
-> mode, network interception, and rich single-job client data are upcoming steps.
+> Console-only tool. Upcoming: hidden/off-screen mode, network interception, and
+> richer single-job client data.
 
 ## Build
 
@@ -19,13 +19,23 @@ Requires Go 1.23+ and Google Chrome installed.
 ## Usage
 
 ```sh
-# A full Upwork URL (feed, search, or a job page):
-upwork-bid-helper "https://www.upwork.com/nx/find-work/most-recent"
+# Sign in once (opens a visible Chrome; session is saved & reused):
+upwork-bid-helper login
+
+# Shortcuts (no full URL needed) — one per find-work tab:
+upwork-bid-helper myfeed          # My Feed
+upwork-bid-helper best            # Best Matches
+upwork-bid-helper recent          # Most Recent
+upwork-bid-helper saved           # Saved Jobs
+
+# A full Upwork URL also works (feed, search, or a job page):
 upwork-bid-helper "https://www.upwork.com/jobs/~02xxxxxxxxxxxxxxxxx"
 
 # Or build a search from key=value args (bare words become the query):
 upwork-bid-helper q="react native" payment_verified=1
 ```
+
+Available shortcuts: `myfeed`, `best`, `recent`, `saved`.
 
 The browser opens **visibly**. On first run, log in (and solve any CAPTCHA) in that
 window — the session is saved to a persistent profile and reused on later runs. If a
@@ -40,6 +50,7 @@ login/challenge appears mid-run the tool waits for you to finish, then continues
 | `--chrome` | system Chrome | path to a Chrome binary |
 | `--profile` | app config dir | persistent profile directory |
 | `--timeout` | `3m` | max wait for the page (includes manual login) |
+| `--dry-run` | off | print the resolved target URL and exit (does not open the browser) |
 | `--headless` | off | **local `file://` exports/testing only** — never use against live Upwork (instantly bot-flagged) |
 
 `file://` paths are accepted as targets so you can export from a saved page offline.

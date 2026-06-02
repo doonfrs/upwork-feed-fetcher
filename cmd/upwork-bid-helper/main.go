@@ -1,13 +1,12 @@
-// Command upwork-bid-helper drives a real Chrome to export Upwork feed/search
-// results or a single job to JSON / CSV / XML.
+// Command upwork-bid-helper is a console tool that drives a real Chrome to
+// export Upwork feed/search results or a single job to JSON / CSV / XML.
 //
-// Step 1 (this build): CLI mode only.
-//
-//	upwork-bid-helper [flags] <url>
-//	upwork-bid-helper [flags] q="react native" category=...
+//	upwork-bid-helper login                      # sign in once; saves the session
+//	upwork-bid-helper <page|url>                 # myfeed | best | recent | saved | a full URL
+//	upwork-bid-helper q="react native" category=...   # build a search and export
 //
 // The browser opens visibly; log in once and the persistent profile reuses the
-// session on later runs. GUI mode (double-click) arrives in a later step.
+// session on later runs.
 package main
 
 import (
@@ -42,6 +41,7 @@ func run() error {
 		profile    = flag.String("profile", "", "persistent profile dir (default: app config dir)")
 		timeout    = flag.Duration("timeout", 3*time.Minute, "max wait for the page to be ready (incl. manual login)")
 		headless   = flag.Bool("headless", false, "run without a window — for local file:// exports/testing only; do NOT use against live Upwork (instantly bot-flagged)")
+		dryRun     = flag.Bool("dry-run", false, "print the resolved target URL and exit (does not open the browser)")
 	)
 	flag.Parse()
 	args := flag.Args()
@@ -52,10 +52,18 @@ func run() error {
 	}
 
 	if len(args) == 0 {
-		return fmt.Errorf("nothing to do.\nUsage:\n  upwork-bid-helper login                 # sign in once; saves the session\n  upwork-bid-helper <upwork-url>          # export a feed/search/job page\n  upwork-bid-helper q=\"react native\" ...   # build a search and export\n(GUI mode arrives in a later step.)")
+		return fmt.Errorf("nothing to do.\nUsage:\n" +
+			"  upwork-bid-helper login                 # sign in once; saves the session\n" +
+			"  upwork-bid-helper <page>                # use myfeed, best, recent, saved\n" +
+			"  upwork-bid-helper <upwork-url>          # export a feed/search/job page\n" +
+			"  upwork-bid-helper q=\"react native\" ...   # build a search and export")
 	}
 
 	target := resolveTarget(args)
+	if *dryRun {
+		fmt.Println(target)
+		return nil
+	}
 	fmt.Fprintf(os.Stderr, "target: %s\n", target)
 
 	b, err := browser.Launch(browser.Options{ProfileDir: *profile, ChromePath: *chromePath, Headless: *headless})
@@ -147,13 +155,10 @@ func runLogin(profile, chromePath string, timeout time.Duration) error {
 	return fmt.Errorf("timed out after %s. If you did sign in, your session is likely already saved — just re-run a command; otherwise run `login` again", timeout)
 }
 
-// resolveTarget returns the URL to visit: a full URL passed directly, or one
-// built from key=val search args.
+// resolveTarget returns the URL to visit: a full URL, a known shortcut
+// (recent, feed, …), or one built from key=val search args.
 func resolveTarget(args []string) string {
-	if len(args) == 1 && search.IsURL(args[0]) {
-		return args[0]
-	}
-	return search.BuildURL(search.ParseArgs(args))
+	return search.Resolve(args)
 }
 
 // waitAndExtract polls until the page is ready, surfacing login/CAPTCHA to the

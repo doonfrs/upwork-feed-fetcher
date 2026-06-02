@@ -6,8 +6,53 @@ import (
 	"strings"
 )
 
-// BaseURL is the Upwork job search endpoint.
-const BaseURL = "https://www.upwork.com/nx/search/jobs/"
+const findWork = "https://www.upwork.com/nx/find-work/"
+
+// Known Upwork page URLs, exposed as constants for reuse. These mirror the
+// find-work tabs: My Feed (the base route), Best Matches, Most Recent, Saved Jobs.
+const (
+	// BaseURL is the Upwork job search endpoint.
+	BaseURL = "https://www.upwork.com/nx/search/jobs/"
+	// URLMyFeed is the "My Feed" tab (the default find-work page).
+	URLMyFeed = findWork
+	// URLBestMatches is the "Best Matches" tab.
+	URLBestMatches = findWork + "best-matches"
+	// URLMostRecent is the "Most Recent" tab.
+	URLMostRecent = findWork + "most-recent"
+	// URLSavedJobs is the "Saved Jobs" tab.
+	URLSavedJobs = findWork + "saved-jobs"
+)
+
+// aliases map short names to full Upwork find-work URLs, one per tab. Keys are
+// matched case-insensitively after trimming.
+var aliases = map[string]string{
+	"myfeed": URLMyFeed,
+	"best":   URLBestMatches,
+	"recent": URLMostRecent,
+	"saved":  URLSavedJobs,
+}
+
+// Alias resolves a shortcut name to a full URL.
+func Alias(name string) (string, bool) {
+	u, ok := aliases[strings.ToLower(strings.TrimSpace(name))]
+	return u, ok
+}
+
+// Resolve turns CLI args into a target URL:
+//   - a single full URL (http/https/file) is used as-is
+//   - a single known shortcut (myfeed, best, recent, saved) expands to its URL
+//   - anything else is treated as key=val search args / bare query terms
+func Resolve(args []string) string {
+	if len(args) == 1 {
+		if IsURL(args[0]) {
+			return args[0]
+		}
+		if u, ok := Alias(args[0]); ok {
+			return u
+		}
+	}
+	return BuildURL(ParseArgs(args))
+}
 
 // IsURL reports whether s looks like a full URL rather than a key=val arg.
 // file:// is accepted so the tool can export from a saved HTML page offline.
