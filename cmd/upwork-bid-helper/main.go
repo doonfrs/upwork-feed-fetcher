@@ -10,6 +10,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -52,8 +53,7 @@ func run() error {
 		out        = flag.String("out", "", "output file (or prefix when multiple formats); default ./upwork-<type>-<ts>")
 		chromePath = flag.String("chrome", "", "path to Chrome binary (default: system Chrome)")
 		profile    = flag.String("profile", "", "persistent profile dir (default: app config dir)")
-		timeout    = flag.Duration("timeout", 3*time.Minute, "max wait for the page to be ready (incl. manual login)")
-		headless   = flag.Bool("headless", false, "run without a window — for local file:// exports/testing only; do NOT use against live Upwork (instantly bot-flagged)")
+		timeout    = flag.Duration("timeout", 90*time.Second, "max wait for the page to load")
 		dryRun     = flag.Bool("dry-run", false, "print the resolved target URL and exit (does not open the browser)")
 	)
 	flag.Parse()
@@ -79,7 +79,8 @@ func run() error {
 	}
 	fmt.Fprintf(os.Stderr, "target: %s\n", target)
 
-	b, err := browser.Launch(browser.Options{ProfileDir: *profile, ChromePath: *chromePath, Headless: *headless})
+	// Exports run headless (background, no window). Only `login` runs headed.
+	b, err := browser.Launch(browser.Options{ProfileDir: *profile, ChromePath: *chromePath, Headless: true})
 	if err != nil {
 		return err
 	}
@@ -94,7 +95,7 @@ func run() error {
 		return fmt.Errorf("navigate: %w", err)
 	}
 
-	res, err := waitAndExtract(page, target, *timeout)
+	res, err := waitAndExtract(page, *timeout)
 	if err != nil {
 		return err
 	}
@@ -184,28 +185,20 @@ func resolveTarget(args []string) string {
 	return search.Resolve(args)
 }
 
-// waitAndExtract polls until the page is ready, surfacing login/CAPTCHA to the
-// user (the visible window lets them solve it), then runs the extractor.
-func waitAndExtract(page *rod.Page, target string, timeout time.Duration) (*model.Result, error) {
-	deadline := time.Now().Add(timeout)
-	var notedChallenge bool
-	renavigated := false
+// errLoginRequired is returned when an export hits a login/challenge wall.
+// The export browser is hidden, so we don't pop a window — we tell the user to
+// run `login` (which opens visibly) to refresh the session.
+var errLoginRequired = errors.New("login required — run: upwork-bid-helper login")
 
+// waitAndExtract polls until the (hidden) page is ready, then runs the
+// extractor. If Upwork shows login/CAPTCHA, it returns errLoginRequired.
+func waitAndExtract(page *rod.Page, timeout time.Duration) (*model.Result, error) {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		switch browser.Probe(page) {
 		case browser.StatusLogin, browser.StatusCaptcha:
-			if !notedChallenge {
-				fmt.Fprintln(os.Stderr, "→ Upwork is asking you to log in / solve a challenge in the browser window. Waiting for you to finish…")
-				notedChallenge = true
-			}
+			return nil, errLoginRequired
 		case browser.StatusReady:
-			// If we had been bounced to login, return to the target once.
-			if notedChallenge && !renavigated && !sameURL(page, target) {
-				_ = page.Navigate(target)
-				renavigated = true
-				time.Sleep(1500 * time.Millisecond)
-				continue
-			}
 			res, err := extract.Run(page)
 			if err != nil {
 				return nil, err
@@ -220,15 +213,7 @@ func waitAndExtract(page *rod.Page, target string, timeout time.Duration) (*mode
 	if res, err := extract.Run(page); err == nil {
 		return res, nil
 	}
-	return nil, fmt.Errorf("timed out after %s waiting for the page to be ready", timeout)
-}
-
-func sameURL(page *rod.Page, target string) bool {
-	info, err := page.Info()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(info.URL, strings.TrimPrefix(strings.TrimPrefix(target, "https://"), "http://"))
+	return nil, fmt.Errorf("timed out after %s waiting for the page", timeout)
 }
 
 func count(res *model.Result) int {

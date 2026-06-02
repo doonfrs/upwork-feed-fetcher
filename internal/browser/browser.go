@@ -38,8 +38,9 @@ type Options struct {
 	// Chrome drops on close). Restored on launch; written by SaveState. Empty =>
 	// derive a path from the profile dir.
 	StateFile string
-	// Headless launches without a window. ONLY for local/offline file:// tests —
-	// never against live Upwork, where headless is instantly bot-flagged.
+	// Headless runs Chrome in background mode (no window). Exports use this; with
+	// the restored session cookies Upwork serves the authenticated pages fine.
+	// `login` runs headed so the user can sign in.
 	Headless bool
 }
 

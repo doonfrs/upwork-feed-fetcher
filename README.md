@@ -37,9 +37,11 @@ upwork-bid-helper q="react native" payment_verified=1
 
 Available shortcuts: `myfeed`, `best`, `recent`, `saved`.
 
-The browser opens **visibly**. On first run, log in (and solve any CAPTCHA) in that
-window — the session is saved to a persistent profile and reused on later runs. If a
-login/challenge appears mid-run the tool waits for you to finish, then continues.
+**Visibility:** `login` opens a **visible** window so you can sign in (and solve any
+CAPTCHA); the session is saved to a persistent profile and reused on later runs.
+Exports (`recent`, a URL, a search) run **headless** (background, no window) — with the
+restored session cookies Upwork serves the authenticated pages fine. If an export hits a
+login/challenge wall it exits with `login required — run: upwork-bid-helper login`.
 
 ### Flags
 
@@ -49,9 +51,8 @@ login/challenge appears mid-run the tool waits for you to finish, then continues
 | `--out` | auto | output file, or filename prefix when multiple formats |
 | `--chrome` | system Chrome | path to a Chrome binary |
 | `--profile` | app config dir | persistent profile directory |
-| `--timeout` | `3m` | max wait for the page (includes manual login) |
+| `--timeout` | `90s` | max wait for the page to load |
 | `--dry-run` | off | print the resolved target URL and exit (does not open the browser) |
-| `--headless` | off | **local `file://` exports/testing only** — never use against live Upwork (instantly bot-flagged) |
 
 `file://` paths are accepted as targets so you can export from a saved page offline.
 
