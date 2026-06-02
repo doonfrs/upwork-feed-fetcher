@@ -45,8 +45,8 @@ login/challenge appears mid-run the tool waits for you to finish, then continues
 
 | flag | default | meaning |
 |------|---------|---------|
-| `--format` | `all` | `json` \| `csv` \| `xml` \| `all` |
-| `--out` | auto | output file, or filename prefix when `--format=all` |
+| `--format` | `json` | `json` \| `csv` \| `xml` \| `all` (or comma-separated, e.g. `json,csv`) |
+| `--out` | auto | output file, or filename prefix when multiple formats |
 | `--chrome` | system Chrome | path to a Chrome binary |
 | `--profile` | app config dir | persistent profile directory |
 | `--timeout` | `3m` | max wait for the page (includes manual login) |

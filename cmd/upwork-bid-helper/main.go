@@ -35,8 +35,8 @@ func main() {
 
 func run() error {
 	var (
-		format     = flag.String("format", "all", "output format: json | csv | xml | all")
-		out        = flag.String("out", "", "output file (or prefix when --format=all); default ./upwork-<type>-<ts>")
+		format     = flag.String("format", "json", "output format: json | csv | xml | all (or comma-separated)")
+		out        = flag.String("out", "", "output file (or prefix when multiple formats); default ./upwork-<type>-<ts>")
 		chromePath = flag.String("chrome", "", "path to Chrome binary (default: system Chrome)")
 		profile    = flag.String("profile", "", "persistent profile dir (default: app config dir)")
 		timeout    = flag.Duration("timeout", 3*time.Minute, "max wait for the page to be ready (incl. manual login)")
