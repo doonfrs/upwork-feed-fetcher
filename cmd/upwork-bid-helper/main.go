@@ -58,9 +58,11 @@ func run() error {
 	var (
 		format     = flag.String("format", "json", "output format: json | csv | xml | all (or comma-separated)")
 		out        = flag.String("out", "", "output file (or prefix when multiple formats); default ./upwork-<type>-<ts>")
+		output     = flag.String("output", "", "alias for --out")
 		chromePath = flag.String("chrome", "", "path to Chrome binary (default: system Chrome)")
 		profile    = flag.String("profile", "", "persistent profile dir (default: app config dir)")
 		timeout    = flag.Duration("timeout", 90*time.Second, "max wait for the page to load")
+		pages      = flag.Int("pages", 1, "how many feed pages to load (clicks \"Load More Jobs\" pages-1 times); applies to feeds and `all`")
 		dryRun     = flag.Bool("dry-run", false, "print the resolved target URL and exit (does not open the browser)")
 		gui        = flag.Bool("gui", false, "show the browser window during export (disables headless; useful for debugging or pages behind a challenge)")
 		hold       = flag.Bool("hold", false, "open a visible browser, navigate, then keep it open for manual testing (Ctrl+C to close; no export)")
@@ -80,6 +82,17 @@ func run() error {
 		}
 		args = append(args, rest[0])
 		rest = rest[1:]
+	}
+
+	// --output is an alias for --out; prefer whichever was set.
+	outFile := *out
+	if outFile == "" {
+		outFile = *output
+	}
+
+	pageCount := *pages
+	if pageCount < 1 {
+		pageCount = 1
 	}
 
 	// `login` subcommand: open Upwork visibly, let the user sign in, persist the session.
@@ -140,7 +153,7 @@ func run() error {
 
 	var res *model.Result
 	if allMode {
-		res, err = exportAll(page, *timeout)
+		res, err = exportAll(b, page, *timeout, pageCount)
 	} else {
 		fmt.Fprintf(os.Stderr, "target: %s\n", target)
 		if nerr := page.Navigate(target); nerr != nil {
@@ -150,7 +163,7 @@ func run() error {
 		if *hold {
 			holdOpen()
 		}
-		res, err = waitAndExtract(page, *timeout)
+		res, err = waitAndExtract(b, page, *timeout, pageCount)
 	}
 	if err != nil {
 		return err
@@ -167,7 +180,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	written, err := writeOutputs(res, formats, *out)
+	written, err := writeOutputs(res, formats, outFile)
 	if err != nil {
 		return err
 	}
@@ -256,14 +269,14 @@ var allFeeds = []struct{ name, url string }{
 // exportAll visits each find-work feed in turn and merges their jobs into one
 // result, deduplicating by job ID (falling back to UID). A login/challenge wall
 // on any feed aborts the run, since it means the session needs refreshing.
-func exportAll(page *rod.Page, timeout time.Duration) (*model.Result, error) {
+func exportAll(b *browser.Browser, page *rod.Page, timeout time.Duration, pages int) (*model.Result, error) {
 	combined := &model.Result{PageType: model.PageAll}
 	seen := map[string]bool{}
 	for _, f := range allFeeds {
 		if err := page.Navigate(f.url); err != nil {
 			return nil, fmt.Errorf("navigate %s: %w", f.name, err)
 		}
-		res, err := waitAndExtract(page, timeout)
+		res, err := waitAndExtract(b, page, timeout, pages)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", f.name, err)
 		}
@@ -294,8 +307,10 @@ func exportAll(page *rod.Page, timeout time.Duration) (*model.Result, error) {
 var errLoginRequired = errors.New("login required — run: upwork-bid-helper login")
 
 // waitAndExtract polls until the (hidden) page is ready, then runs the
-// extractor. If Upwork shows login/CAPTCHA, it returns errLoginRequired.
-func waitAndExtract(page *rod.Page, timeout time.Duration) (*model.Result, error) {
+// extractor. If pages > 1, it clicks "Load More Jobs" to pull additional pages
+// before the final extraction. If Upwork shows login/CAPTCHA, it returns
+// errLoginRequired.
+func waitAndExtract(b *browser.Browser, page *rod.Page, timeout time.Duration, pages int) (*model.Result, error) {
 	deadline := time.Now().Add(timeout)
 	var readyEmptyAt time.Time // first time we saw a ready page with no jobs
 	for time.Now().Before(deadline) {
@@ -307,7 +322,16 @@ func waitAndExtract(page *rod.Page, timeout time.Duration) (*model.Result, error
 			if err != nil {
 				return nil, err
 			}
-			if res.Exportable() || res.PageType == model.PageUnknown {
+			if res.Exportable() {
+				if pages > 1 {
+					loadMoreJobs(b, page, pages-1)
+					if more, err := extract.Run(page); err == nil && more.Exportable() {
+						res = more
+					}
+				}
+				return res, nil
+			}
+			if res.PageType == model.PageUnknown {
 				return res, nil
 			}
 			// Ready but no jobs: this is a genuinely empty feed (e.g. no saved
@@ -327,6 +351,50 @@ func waitAndExtract(page *rod.Page, timeout time.Duration) (*model.Result, error
 		return res, nil
 	}
 	return nil, fmt.Errorf("timed out after %s waiting for the page", timeout)
+}
+
+// loadMoreJobs clicks the feed's "Load More Jobs" button up to n times, waiting
+// after each click for the job list to grow. It stops early if the button is
+// gone (last page) or no new jobs appear.
+func loadMoreJobs(b *browser.Browser, page *rod.Page, n int) {
+	for i := 0; i < n; i++ {
+		before := jobCount(page)
+		clicked, err := b.ClickLoadMore(page)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  load-more click failed: %v\n", err)
+			return
+		}
+		if !clicked {
+			fmt.Fprintf(os.Stderr, "  no more pages (reached the last one)\n")
+			return
+		}
+		if !waitJobsGrow(page, before, 20*time.Second) {
+			fmt.Fprintf(os.Stderr, "  no new jobs loaded after Load More\n")
+			return
+		}
+		fmt.Fprintf(os.Stderr, "  loaded page %d (%d jobs total)\n", i+2, jobCount(page))
+	}
+}
+
+// waitJobsGrow polls until the extracted job count exceeds before, or timeout.
+func waitJobsGrow(page *rod.Page, before int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if jobCount(page) > before {
+			return true
+		}
+	}
+	return false
+}
+
+// jobCount returns how many jobs the extractor currently sees on the page.
+func jobCount(page *rod.Page) int {
+	res, err := extract.Run(page)
+	if err != nil {
+		return 0
+	}
+	return len(res.Jobs)
 }
 
 func count(res *model.Result) int {

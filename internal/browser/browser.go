@@ -152,6 +152,22 @@ func (b *Browser) NewPage() (*rod.Page, error) {
 	return page, nil
 }
 
+// ClickLoadMore clicks the feed "Load More Jobs" button to fetch the next page.
+// It returns false (no error) when the button is absent, which means there are
+// no further pages.
+func (b *Browser) ClickLoadMore(page *rod.Page) (bool, error) {
+	btn, err := page.Timeout(5 * time.Second).Element(`[data-test="load-more-button"]`)
+	if err != nil || btn == nil {
+		return false, nil // no button => only one page
+	}
+	btn = btn.CancelTimeout()
+	_ = btn.ScrollIntoView()
+	if err := btn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return false, fmt.Errorf("click load-more: %w", err)
+	}
+	return true, nil
+}
+
 // Close shuts the browser down and reaps the Chrome process.
 func (b *Browser) Close() {
 	if b.rod != nil {
