@@ -12,8 +12,10 @@ const findWork = "https://www.upwork.com/nx/find-work/"
 // Known Upwork page URLs, exposed as constants for reuse. These mirror the
 // find-work tabs: My Feed (the base route), Best Matches, Most Recent, Saved Jobs.
 const (
-	// URLMyFeed is the "My Feed" tab (the default find-work page).
-	URLMyFeed = findWork
+	// URLMyFeed is the "My Feed" tab — a personalized feed built from saved
+	// searches. NOTE: the bare /nx/find-work/ root redirects to Best Matches, so
+	// the explicit /my-feed path is required to reach the real My Feed page.
+	URLMyFeed = findWork + "my-feed"
 	// URLBestMatches is the "Best Matches" tab.
 	URLBestMatches = findWork + "best-matches"
 	// URLMostRecent is the "Most Recent" tab.

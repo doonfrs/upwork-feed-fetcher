@@ -273,6 +273,7 @@ func exportAll(b *browser.Browser, page *rod.Page, timeout time.Duration, pages 
 	combined := &model.Result{PageType: model.PageAll}
 	seen := map[string]bool{}
 	for _, f := range allFeeds {
+		fmt.Fprintf(os.Stderr, "\n=== feed: %s ===\n→ navigating to %s\n", f.name, f.url)
 		if err := page.Navigate(f.url); err != nil {
 			return nil, fmt.Errorf("navigate %s: %w", f.name, err)
 		}
@@ -295,7 +296,8 @@ func exportAll(b *browser.Browser, page *rod.Page, timeout time.Duration, pages 
 			combined.Jobs = append(combined.Jobs, j)
 			added++
 		}
-		fmt.Fprintf(os.Stderr, "  %-7s %d jobs (%d new)\n", f.name, len(res.Jobs), added)
+		fmt.Fprintf(os.Stderr, "= %s: %d jobs extracted, %d new (%d unique total so far)\n",
+			f.name, len(res.Jobs), added, len(combined.Jobs))
 	}
 	combined.Count = len(combined.Jobs)
 	return combined, nil
@@ -323,9 +325,13 @@ func waitAndExtract(b *browser.Browser, page *rod.Page, timeout time.Duration, p
 				return nil, err
 			}
 			if res.Exportable() {
-				if pages > 1 {
-					loadMoreJobs(b, page, pages-1)
+				if info, ierr := page.Info(); ierr == nil {
+					fmt.Fprintf(os.Stderr, "  page ready: %s\n  initial extract: %d jobs (pageType=%s)\n",
+						info.URL, len(res.Jobs), res.PageType)
+				}
+				if pages > 1 && loadMoreJobs(b, page, pages-1) {
 					if more, err := extract.Run(page); err == nil && more.Exportable() {
+						fmt.Fprintf(os.Stderr, "  final extract after load-more: %d jobs\n", len(more.Jobs))
 						res = more
 					}
 				}
@@ -356,24 +362,35 @@ func waitAndExtract(b *browser.Browser, page *rod.Page, timeout time.Duration, p
 // loadMoreJobs clicks the feed's "Load More Jobs" button up to n times, waiting
 // after each click for the job list to grow. It stops early if the button is
 // gone (last page) or no new jobs appear.
-func loadMoreJobs(b *browser.Browser, page *rod.Page, n int) {
+// loadMoreJobs returns true if it loaded at least one additional page.
+func loadMoreJobs(b *browser.Browser, page *rod.Page, n int) bool {
+	loaded := false
 	for i := 0; i < n; i++ {
 		before := jobCount(page)
+		fmt.Fprintf(os.Stderr, "  [page %d] looking for \"Load More Jobs\" button (have %d jobs)…\n", i+2, before)
 		clicked, err := b.ClickLoadMore(page)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  load-more click failed: %v\n", err)
-			return
+			fmt.Fprintf(os.Stderr, "  [page %d] load-more click failed: %v\n", i+2, err)
+			return loaded
 		}
 		if !clicked {
-			fmt.Fprintf(os.Stderr, "  no more pages (reached the last one)\n")
-			return
+			fmt.Fprintf(os.Stderr, "  [page %d] button NOT found — only %d page(s) available; stopping\n", i+2, i+1)
+			return loaded
 		}
+		fmt.Fprintf(os.Stderr, "  [page %d] clicked; waiting for jobs to grow past %d…\n", i+2, before)
 		if !waitJobsGrow(page, before, 20*time.Second) {
-			fmt.Fprintf(os.Stderr, "  no new jobs loaded after Load More\n")
-			return
+			fmt.Fprintf(os.Stderr, "  [page %d] clicked but count stayed at %d after 20s; stopping\n", i+2, jobCount(page))
+			return loaded
 		}
-		fmt.Fprintf(os.Stderr, "  loaded page %d (%d jobs total)\n", i+2, jobCount(page))
+		after := jobCount(page)
+		url := ""
+		if info, ierr := page.Info(); ierr == nil {
+			url = info.URL
+		}
+		fmt.Fprintf(os.Stderr, "  [page %d] loaded: %d → %d jobs (url: %s)\n", i+2, before, after, url)
+		loaded = true
 	}
+	return loaded
 }
 
 // waitJobsGrow polls until the extracted job count exceeds before, or timeout.
