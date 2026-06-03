@@ -55,21 +55,43 @@ func run() error {
 		profile    = flag.String("profile", "", "persistent profile dir (default: app config dir)")
 		timeout    = flag.Duration("timeout", 90*time.Second, "max wait for the page to load")
 		dryRun     = flag.Bool("dry-run", false, "print the resolved target URL and exit (does not open the browser)")
+		gui        = flag.Bool("gui", false, "show the browser window during export (disables headless; useful for debugging or pages behind a challenge)")
+		query      = flag.String("q", "", "search query (e.g. --q \"react native\"); combine with key=value filter args")
 	)
-	flag.Parse()
-	args := flag.Args()
+	// Go's flag package stops at the first non-flag arg, so `q=x --gui` would
+	// treat --gui as a positional. Loop the parse to allow flags and positional
+	// args (search terms, a URL, or `login`) in any order.
+	var args []string
+	rest := os.Args[1:]
+	for {
+		if err := flag.CommandLine.Parse(rest); err != nil {
+			return err
+		}
+		rest = flag.Args()
+		if len(rest) == 0 {
+			break
+		}
+		args = append(args, rest[0])
+		rest = rest[1:]
+	}
 
 	// `login` subcommand: open Upwork visibly, let the user sign in, persist the session.
 	if len(args) >= 1 && args[0] == "login" {
 		return runLogin(*profile, *chromePath, *timeout)
 	}
 
+	// --q feeds the search builder, same as a positional q=... arg.
+	if *query != "" {
+		args = append([]string{"q=" + *query}, args...)
+	}
+
 	if len(args) == 0 {
 		return fmt.Errorf("nothing to do.\nUsage:\n" +
-			"  upwork-bid-helper login                 # sign in once; saves the session\n" +
-			"  upwork-bid-helper <page>                # use myfeed, best, recent, saved\n" +
-			"  upwork-bid-helper <upwork-url>          # export a feed/search/job page\n" +
-			"  upwork-bid-helper q=\"react native\" ...   # build a search and export")
+			"  upwork-bid-helper login                  # sign in once; saves the session\n" +
+			"  upwork-bid-helper <page>                 # use myfeed, best, recent, saved\n" +
+			"  upwork-bid-helper <upwork-url>           # export a feed/search/job page\n" +
+			"  upwork-bid-helper --q \"react native\"      # build a search and export\n" +
+			"  upwork-bid-helper --gui --q laravel      # same, with a visible window")
 	}
 
 	target := resolveTarget(args)
@@ -79,8 +101,9 @@ func run() error {
 	}
 	fmt.Fprintf(os.Stderr, "target: %s\n", target)
 
-	// Exports run headless (background, no window). Only `login` runs headed.
-	b, err := browser.Launch(browser.Options{ProfileDir: *profile, ChromePath: *chromePath, Headless: true})
+	// Exports run headless (background, no window) by default; --gui shows the
+	// window (e.g. to watch a page or get past a challenge headless can't clear).
+	b, err := browser.Launch(browser.Options{ProfileDir: *profile, ChromePath: *chromePath, Headless: !*gui})
 	if err != nil {
 		return err
 	}
