@@ -1,12 +1,14 @@
 # upwork-bid-helper
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-%E2%98%95-orange.svg?style=flat-square)](https://buymeacoffee.com/doonfrs)
+
 A command-line tool that exports your Upwork job feeds to **JSON** (or CSV/XML),
 so a script or an AI model can read them, rank them, and decide what's worth
-bidding on — without you (or an AI agent) clicking through a browser every time.
+bidding on, without you (or an AI agent) clicking through a browser every time.
 
 ## Why
 
-Browsing Upwork through an AI agent is slow and expensive — every search, scroll,
+Browsing Upwork through an AI agent is slow and expensive. Every search, scroll,
 and click burns screenshots and tokens. This tool flips it around:
 
 1. Run it on a schedule (say, hourly). It opens Upwork in the background, grabs
@@ -36,7 +38,7 @@ It can export any of your Find Work feeds:
 
 > **No keyword search.** Upwork puts the search page behind a Cloudflare bot
 > challenge that blocks automated browsers, so search isn't supported. The feeds
-> above are *not* blocked — set up Saved Searches on Upwork (they power `myfeed`)
+> above are *not* blocked. Set up Saved Searches on Upwork (they power `myfeed`)
 > to get keyword-targeted results.
 
 ## Requirements
@@ -64,7 +66,7 @@ go build -o upwork-bid-helper.exe ./cmd/upwork-bid-helper
 upwork-bid-helper login
 ```
 
-Opens a visible Chrome — sign in to Upwork (and solve any CAPTCHA). Your session
+Opens a visible Chrome. Sign in to Upwork (and solve any CAPTCHA). Your session
 is saved and reused on every later run; you won't sign in again unless it expires.
 
 ### 2. Export a feed
@@ -144,3 +146,27 @@ upwork-bid-helper all --pages 2 --output jobs.json
 ```sh
 go test ./...
 ```
+
+## Support
+
+If this tool saves you time, here's how to help keep it going:
+
+- ⭐ **Star the repo** on GitHub
+- ☕ **Buy me a coffee**: [buymeacoffee.com/doonfrs](https://buymeacoffee.com/doonfrs)
+
+Every star and coffee means a lot and helps maintain the project! 🚀
+
+## Author
+
+**Feras Abdalrahman**
+
+- GitHub: [@doonfrs](https://github.com/doonfrs)
+- LinkedIn: [in/doonfrs](https://www.linkedin.com/in/doonfrs/)
+
+💼 **Available for freelance work.** Need a developer for your project? Reach out
+at [doonfrs@gmail.com](mailto:doonfrs@gmail.com).
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file
+for details.
