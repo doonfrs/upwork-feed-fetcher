@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/doonfrs/upwork-bid-helper/internal/model"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/model"
 )
 
 func sample() *model.Result {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-rod/rod"
 
-	"github.com/doonfrs/upwork-bid-helper/internal/browser"
-	"github.com/doonfrs/upwork-bid-helper/internal/extract"
-	"github.com/doonfrs/upwork-bid-helper/internal/model"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/browser"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/extract"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/model"
 )
 
 // loadSample loads a saved HTML sample from temp/ into a headless Chrome and

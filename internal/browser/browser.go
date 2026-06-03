@@ -59,7 +59,7 @@ func DefaultProfileDir() string {
 	if err != nil || base == "" {
 		base, _ = os.UserHomeDir()
 	}
-	return filepath.Join(base, "upwork-bid-helper", "profile")
+	return filepath.Join(base, "upwork-feed-fetcher", "profile")
 }
 
 // Launch starts Chrome and connects to it.

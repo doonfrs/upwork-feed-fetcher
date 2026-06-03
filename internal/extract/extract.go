@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-rod/rod"
 
-	"github.com/doonfrs/upwork-bid-helper/internal/model"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/model"
 )
 
 //go:embed extract.js

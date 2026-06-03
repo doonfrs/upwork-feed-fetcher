@@ -1,4 +1,4 @@
-# upwork-bid-helper
+# upwork-feed-fetcher
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-%E2%98%95-orange.svg?style=flat-square)](https://buymeacoffee.com/doonfrs)
 
@@ -49,13 +49,13 @@ It can export any of your Find Work feeds:
 ## Build
 
 ```sh
-go build -o upwork-bid-helper ./cmd/upwork-bid-helper
+go build -o upwork-feed-fetcher ./cmd/upwork-feed-fetcher
 ```
 
 On Windows:
 
 ```powershell
-go build -o upwork-bid-helper.exe ./cmd/upwork-bid-helper
+go build -o upwork-feed-fetcher.exe ./cmd/upwork-feed-fetcher
 ```
 
 ## Usage
@@ -63,7 +63,7 @@ go build -o upwork-bid-helper.exe ./cmd/upwork-bid-helper
 ### 1. Sign in once
 
 ```sh
-upwork-bid-helper login
+upwork-feed-fetcher login
 ```
 
 Opens a visible Chrome. Sign in to Upwork (and solve any CAPTCHA). Your session
@@ -72,10 +72,10 @@ is saved and reused on every later run; you won't sign in again unless it expire
 ### 2. Export a feed
 
 ```sh
-upwork-bid-helper myfeed     # your personalized feed
-upwork-bid-helper best       # best matches
-upwork-bid-helper recent     # most recent
-upwork-bid-helper saved      # saved jobs
+upwork-feed-fetcher myfeed     # your personalized feed
+upwork-feed-fetcher best       # best matches
+upwork-feed-fetcher recent     # most recent
+upwork-feed-fetcher saved      # saved jobs
 ```
 
 These run in the background (no window) and write a file like
@@ -84,7 +84,7 @@ These run in the background (no window) and write a file like
 ### 3. Export everything at once
 
 ```sh
-upwork-bid-helper all
+upwork-feed-fetcher all
 ```
 
 Sweeps **myfeed + best + recent** in one run, merges them, removes duplicates, and
@@ -95,8 +95,8 @@ writes a single `upwork-all-….json`. This is the one to schedule.
 You get the first page by default. To pull more, click "Load More" automatically:
 
 ```sh
-upwork-bid-helper all --pages 2      # ~2 pages per feed
-upwork-bid-helper recent --pages 3   # 3 pages
+upwork-feed-fetcher all --pages 2      # ~2 pages per feed
+upwork-feed-fetcher recent --pages 3   # 3 pages
 ```
 
 (Best Matches is a fixed list with no "Load More", so `--pages` only adds jobs to
@@ -105,15 +105,15 @@ upwork-bid-helper recent --pages 3   # 3 pages
 ### 5. A single job
 
 ```sh
-upwork-bid-helper "https://www.upwork.com/jobs/~021234567890abcdef"
+upwork-feed-fetcher "https://www.upwork.com/jobs/~021234567890abcdef"
 ```
 
 ### Choosing the output
 
 ```sh
-upwork-bid-helper all --output jobs.json      # name the file
-upwork-bid-helper all --format csv            # or csv / xml
-upwork-bid-helper all --format json,csv,xml   # several at once
+upwork-feed-fetcher all --output jobs.json      # name the file
+upwork-feed-fetcher all --format csv            # or csv / xml
+upwork-feed-fetcher all --format json,csv,xml   # several at once
 ```
 
 With no `--output`, it writes `upwork-<type>-<timestamp>.json` in the current
@@ -136,7 +136,7 @@ folder.
 ## Example: hourly triage
 
 ```sh
-upwork-bid-helper all --pages 2 --output jobs.json
+upwork-feed-fetcher all --pages 2 --output jobs.json
 # → hand jobs.json to Claude / Codex / your script to rank and decide,
 #   then open Upwork only for the jobs worth bidding on.
 ```

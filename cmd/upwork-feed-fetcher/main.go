@@ -1,12 +1,11 @@
-// Command upwork-bid-helper is a console tool that drives a real Chrome to
-// export Upwork feed/search results or a single job to JSON / CSV / XML.
+// Command upwork-feed-fetcher is a console tool that drives a real Chrome to
+// export Upwork find-work feeds or a single job to JSON / CSV / XML.
 //
-//	upwork-bid-helper login                      # sign in once; saves the session
-//	upwork-bid-helper <page|url>                 # myfeed | best | recent | saved | a full URL
-//	upwork-bid-helper q="react native" category=...   # build a search and export
+//	upwork-feed-fetcher login        # sign in once; saves the session
+//	upwork-feed-fetcher <page|url>   # myfeed | best | recent | saved | a full URL
+//	upwork-feed-fetcher all          # sweep every feed, merge + dedupe
 //
-// The browser opens visibly; log in once and the persistent profile reuses the
-// session on later runs.
+// The browser opens visibly for login; later runs reuse the saved session.
 package main
 
 import (
@@ -21,11 +20,11 @@ import (
 
 	"github.com/go-rod/rod"
 
-	"github.com/doonfrs/upwork-bid-helper/internal/browser"
-	"github.com/doonfrs/upwork-bid-helper/internal/export"
-	"github.com/doonfrs/upwork-bid-helper/internal/extract"
-	"github.com/doonfrs/upwork-bid-helper/internal/model"
-	"github.com/doonfrs/upwork-bid-helper/internal/search"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/browser"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/export"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/extract"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/model"
+	"github.com/doonfrs/upwork-feed-fetcher/internal/search"
 )
 
 // holdOpen keeps the visible browser open for manual interaction until Ctrl+C
@@ -108,12 +107,12 @@ func run() error {
 
 	if len(args) == 0 {
 		return fmt.Errorf("nothing to do.\nUsage:\n" +
-			"  upwork-bid-helper login                  # sign in once; saves the session\n" +
-			"  upwork-bid-helper <page>                 # use myfeed, best, recent, saved\n" +
-			"  upwork-bid-helper all                    # sweep every feed, merge + dedupe\n" +
-			"  upwork-bid-helper <upwork-url>           # export a feed or job page\n" +
-			"  upwork-bid-helper --gui recent           # export with a visible window\n" +
-			"  upwork-bid-helper --hold recent          # open and keep the window open")
+			"  upwork-feed-fetcher login                  # sign in once; saves the session\n" +
+			"  upwork-feed-fetcher <page>                 # use myfeed, best, recent, saved\n" +
+			"  upwork-feed-fetcher all                    # sweep every feed, merge + dedupe\n" +
+			"  upwork-feed-fetcher <upwork-url>           # export a feed or job page\n" +
+			"  upwork-feed-fetcher --gui recent           # export with a visible window\n" +
+			"  upwork-feed-fetcher --hold recent          # open and keep the window open")
 	}
 
 	// `all` sweeps every feed and merges them; otherwise resolve a single target.
@@ -233,7 +232,7 @@ func runLogin(profile, chromePath string, timeout time.Duration, hold bool) erro
 			if hold {
 				holdOpen()
 			}
-			fmt.Fprintf(os.Stderr, "Now you can export, e.g.:\n  upwork-bid-helper recent\n")
+			fmt.Fprintf(os.Stderr, "Now you can export, e.g.:\n  upwork-feed-fetcher recent\n")
 			return nil
 		case browser.AuthLogin:
 			if !notedLogin {
@@ -306,7 +305,7 @@ func exportAll(b *browser.Browser, page *rod.Page, timeout time.Duration, pages 
 // errLoginRequired is returned when an export hits a login/challenge wall.
 // The export browser is hidden, so we don't pop a window — we tell the user to
 // run `login` (which opens visibly) to refresh the session.
-var errLoginRequired = errors.New("login required — run: upwork-bid-helper login")
+var errLoginRequired = errors.New("login required, run: upwork-feed-fetcher login")
 
 // waitAndExtract polls until the (hidden) page is ready, then runs the
 // extractor. If pages > 1, it clicks "Load More Jobs" to pull additional pages

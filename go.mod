@@ -1,4 +1,4 @@
-module github.com/doonfrs/upwork-bid-helper
+module github.com/doonfrs/upwork-feed-fetcher
 
 go 1.26.3
 
