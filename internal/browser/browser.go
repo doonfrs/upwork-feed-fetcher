@@ -42,6 +42,16 @@ type Options struct {
 	// the restored session cookies Upwork serves the authenticated pages fine.
 	// `login` runs headed so the user can sign in.
 	Headless bool
+	// Attach connects to a Chrome the user already has running (via its DevTools
+	// debug port) instead of launching one. This reuses the user's real, already
+	// Cloudflare-cleared session: nothing automated goes through the gate, and the
+	// browser was not started with --enable-automation, so navigator.webdriver
+	// stays false. ProfileDir/StateFile/Headless are ignored when Attach is set.
+	Attach bool
+	// AttachPort is the debug endpoint for Attach. Accepts "9222", ":9222",
+	// "host:9222", or a full "ws://…" URL (forwarded to launcher.ResolveURL).
+	// Empty defaults to "9222".
+	AttachPort string
 }
 
 // Browser wraps a launched Chrome and its launcher for clean teardown.
@@ -51,6 +61,7 @@ type Browser struct {
 	profileDir string
 	stateFile  string
 	userAgent  string // UA override applied to new pages (HeadlessChrome stripped)
+	owned      bool   // true: we launched Chrome and may kill it; false: attached
 }
 
 // DefaultProfileDir returns the app-owned persistent profile directory.
@@ -62,8 +73,13 @@ func DefaultProfileDir() string {
 	return filepath.Join(base, "upwork-feed-fetcher", "profile")
 }
 
-// Launch starts Chrome and connects to it.
+// Launch starts Chrome and connects to it. When opts.Attach is set it instead
+// connects to a Chrome the user is already running (see attach).
 func Launch(opts Options) (*Browser, error) {
+	if opts.Attach {
+		return attach(opts)
+	}
+
 	profile := opts.ProfileDir
 	if profile == "" {
 		profile = DefaultProfileDir()
@@ -114,7 +130,7 @@ func Launch(opts Options) (*Browser, error) {
 	if stateFile == "" {
 		stateFile = profile + ".cookies.json"
 	}
-	br := &Browser{launcher: l, rod: b, profileDir: profile, stateFile: stateFile}
+	br := &Browser{launcher: l, rod: b, profileDir: profile, stateFile: stateFile, owned: true}
 
 	// Headless Chrome advertises "HeadlessChrome/<ver>" in its User-Agent, which
 	// Cloudflare treats as a bot. Mirror the real UA with that token rewritten to
@@ -130,6 +146,48 @@ func Launch(opts Options) (*Browser, error) {
 		fmt.Fprintf(os.Stderr, "warning: could not restore saved session: %v\n", err)
 	}
 	return br, nil
+}
+
+// attach connects to a Chrome the user is already running, via its DevTools
+// debug port, instead of launching one. The browser owns its own lifecycle
+// (we never kill it), keeps its real session cookies (no restore), and — having
+// not been started with --enable-automation — keeps navigator.webdriver false.
+// That is the whole point: the human's browser cleared Cloudflare itself, so
+// nothing automated passes through the gate.
+func attach(opts Options) (*Browser, error) {
+	port := opts.AttachPort
+	if port == "" {
+		port = "9222"
+	}
+
+	ws, err := launcher.ResolveURL(port)
+	if err != nil {
+		return nil, fmt.Errorf(`no Chrome debug endpoint at %q: %w
+
+Start Chrome yourself first, e.g.:
+  "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%%LOCALAPPDATA%%\upwork-feed-fetcher\attach-profile"
+Sign in to Upwork in that window, then re-run with --attach.
+NOTE (Chrome 136+): the debug port is IGNORED on your default profile — you MUST pass a separate --user-data-dir as shown above.`, port, err)
+	}
+
+	// NoDefaultDevice: keep the real Chrome's native UA/metrics instead of rod's
+	// emulated device (which would force a stale macOS/Chrome-114 UA — a
+	// fingerprint mismatch). See the note in Launch.
+	b := rod.New().ControlURL(ws).NoDefaultDevice()
+	if err := b.Connect(); err != nil {
+		return nil, fmt.Errorf("connect to chrome at %s: %w", ws, err)
+	}
+
+	// owned=false: this Chrome belongs to the user. We do not strip the UA (a real
+	// headed Chrome carries no HeadlessChrome token) and do not restore cookies
+	// (the live profile already holds the signed-in, Cloudflare-cleared session).
+	return &Browser{rod: b, owned: false}, nil
+}
+
+// Pages returns the browser's currently open pages/tabs. Used by --attach
+// --current to read a page the human already navigated past Cloudflare.
+func (b *Browser) Pages() (rod.Pages, error) {
+	return b.rod.Pages()
 }
 
 // NewPage opens a blank page with the de-headlessed User-Agent applied before
@@ -168,8 +226,13 @@ func (b *Browser) ClickLoadMore(page *rod.Page) (bool, error) {
 	return true, nil
 }
 
-// Close shuts the browser down and reaps the Chrome process.
+// Close shuts the browser down and reaps the Chrome process. For an attached
+// browser (owned=false) this is a no-op: calling rod.Close() would quit the
+// user's own Chrome, so we just let our websocket drop on process exit.
 func (b *Browser) Close() {
+	if !b.owned {
+		return
+	}
 	if b.rod != nil {
 		_ = b.rod.Close()
 	}

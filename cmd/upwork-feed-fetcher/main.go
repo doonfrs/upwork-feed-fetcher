@@ -66,6 +66,9 @@ func run() error {
 		gui        = flag.Bool("gui", false, "show the browser window during export (disables headless; useful for debugging or pages behind a challenge)")
 		hold       = flag.Bool("hold", false, "open a visible browser, navigate, then keep it open for manual testing (Ctrl+C to close; no export)")
 		raw        = flag.Bool("raw", false, "dump the untouched client/buyer object(s) from the page as JSON and exit (diagnostic; no export)")
+		attach     = flag.Bool("attach", false, "attach to your already-running Chrome (via its debug port) instead of launching one, so your real Cloudflare-cleared session is used; start Chrome with --remote-debugging-port and a dedicated --user-data-dir first")
+		attachPort = flag.String("attach-port", "9222", "debug endpoint for --attach (e.g. 9222, :9222, host:9222)")
+		current    = flag.Bool("current", false, "with --attach: read the Upwork tab you already have open instead of navigating (most reliable; you do the Cloudflare-facing navigation)")
 	)
 	// Go's flag package stops at the first non-flag arg, so `recent --gui` would
 	// treat --gui as a positional. Loop the parse to allow flags and the
@@ -97,7 +100,17 @@ func run() error {
 
 	// `login` subcommand: open Upwork visibly, let the user sign in, persist the session.
 	if len(args) >= 1 && args[0] == "login" {
+		if *attach {
+			fmt.Fprintln(os.Stderr, "With --attach there's no separate login: sign in inside your own Chrome window\n"+
+				"(the one you started with --remote-debugging-port). Then run, e.g.:\n  upwork-feed-fetcher --attach recent")
+			return nil
+		}
 		return runLogin(*profile, *chromePath, *timeout, *hold)
+	}
+
+	// --current only makes sense when attached to your own Chrome.
+	if *current && !*attach {
+		return fmt.Errorf("--current requires --attach (it reads a tab from your already-running Chrome)")
 	}
 
 	// --hold with no target defaults to the find-work home so you have a page to
@@ -106,20 +119,24 @@ func run() error {
 		args = []string{"myfeed"}
 	}
 
-	if len(args) == 0 {
+	// --current reads the tab you already have open, so it needs no target.
+	if len(args) == 0 && !*current {
 		return fmt.Errorf("nothing to do.\nUsage:\n" +
 			"  upwork-feed-fetcher login                  # sign in once; saves the session\n" +
 			"  upwork-feed-fetcher <page>                 # use myfeed, best, recent, saved\n" +
 			"  upwork-feed-fetcher all                    # sweep every feed, merge + dedupe\n" +
 			"  upwork-feed-fetcher <upwork-url>           # export a feed or job page\n" +
 			"  upwork-feed-fetcher --gui recent           # export with a visible window\n" +
-			"  upwork-feed-fetcher --hold recent          # open and keep the window open")
+			"  upwork-feed-fetcher --hold recent          # open and keep the window open\n" +
+			"  upwork-feed-fetcher --attach recent        # use your own running Chrome's session\n" +
+			"  upwork-feed-fetcher --attach --current     # export the Upwork tab you already have open")
 	}
 
 	// `all` sweeps every feed and merges them; otherwise resolve a single target.
+	// (--current has no target: it reads whatever Upwork tab is already open.)
 	allMode := len(args) == 1 && strings.EqualFold(args[0], "all")
 	var target string
-	if !allMode {
+	if !allMode && !*current {
 		t, err := resolveTarget(args)
 		if err != nil {
 			return err
@@ -127,26 +144,42 @@ func run() error {
 		target = t
 	}
 	if *dryRun {
-		if allMode {
+		switch {
+		case *current:
+			fmt.Println("(--current: reads the Upwork tab already open in your attached Chrome)")
+		case allMode:
 			for _, f := range allFeeds {
 				fmt.Println(f.url)
 			}
-		} else {
+		default:
 			fmt.Println(target)
 		}
 		return nil
 	}
 
 	// Exports run headless (background, no window) by default; --gui shows the
-	// window. --hold always runs visibly so you can interact.
-	b, err := browser.Launch(browser.Options{ProfileDir: *profile, ChromePath: *chromePath, Headless: !*gui && !*hold})
+	// window. --hold always runs visibly so you can interact. --attach connects to
+	// your own running Chrome (headless is irrelevant — it's already on screen).
+	b, err := browser.Launch(browser.Options{
+		ProfileDir: *profile,
+		ChromePath: *chromePath,
+		Headless:   !*gui && !*hold && !*attach,
+		Attach:     *attach,
+		AttachPort: *attachPort,
+	})
 	if err != nil {
 		return err
 	}
 	defer b.Close()
 	closeOnInterrupt(b)
 
-	page, err := b.NewPage()
+	// --current reads a tab the human already opened; otherwise open a fresh page.
+	var page *rod.Page
+	if *current {
+		page, err = currentUpworkPage(b)
+	} else {
+		page, err = b.NewPage()
+	}
 	if err != nil {
 		return err
 	}
@@ -157,17 +190,28 @@ func run() error {
 		if allMode {
 			return fmt.Errorf("--raw needs a single target (e.g. `recent --raw` or a job URL), not `all`")
 		}
-		fmt.Fprintf(os.Stderr, "target: %s\n", target)
-		if nerr := page.Navigate(target); nerr != nil {
-			return fmt.Errorf("navigate: %w", nerr)
+		if *current {
+			fmt.Fprintln(os.Stderr, "reading the open Upwork tab")
+		} else {
+			fmt.Fprintf(os.Stderr, "target: %s\n", target)
+			if nerr := page.Navigate(target); nerr != nil {
+				return fmt.Errorf("navigate: %w", nerr)
+			}
 		}
 		return dumpRaw(page, *timeout)
 	}
 
 	var res *model.Result
-	if allMode {
+	switch {
+	case allMode:
 		res, err = exportAll(b, page, *timeout, pageCount)
-	} else {
+	case *current:
+		// The human already navigated this tab past Cloudflare; just read it.
+		if info, ierr := page.Info(); ierr == nil {
+			fmt.Fprintf(os.Stderr, "reading open tab: %s\n", info.URL)
+		}
+		res, err = waitAndExtract(b, page, *timeout, pageCount)
+	default:
 		fmt.Fprintf(os.Stderr, "target: %s\n", target)
 		if nerr := page.Navigate(target); nerr != nil {
 			return fmt.Errorf("navigate: %w", nerr)
@@ -268,6 +312,36 @@ func runLogin(profile, chromePath string, timeout time.Duration, hold bool) erro
 // (myfeed, best, recent, saved).
 func resolveTarget(args []string) (string, error) {
 	return search.Resolve(args)
+}
+
+// currentUpworkPage returns an already-open Upwork tab from the attached browser,
+// so --current can read a page the human already loaded past Cloudflare. It
+// prefers a recognizable feed/job/search page over any other upwork.com tab.
+func currentUpworkPage(b *browser.Browser) (*rod.Page, error) {
+	pages, err := b.Pages()
+	if err != nil {
+		return nil, fmt.Errorf("list open tabs: %w", err)
+	}
+	var fallback *rod.Page
+	for _, p := range pages {
+		info, ierr := p.Info()
+		if ierr != nil {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(info.URL), "upwork.com") {
+			continue
+		}
+		if extract.Classify(info.URL) != model.PageUnknown {
+			return p, nil // a feed/job/search tab — exactly what we want
+		}
+		if fallback == nil {
+			fallback = p
+		}
+	}
+	if fallback != nil {
+		return fallback, nil
+	}
+	return nil, fmt.Errorf("no open Upwork tab found — open the feed or job page in your Chrome, then re-run with --attach --current")
 }
 
 // allFeeds are the find-work feeds the `all` command sweeps and merges. Saved

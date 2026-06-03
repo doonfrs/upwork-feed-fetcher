@@ -79,10 +79,11 @@ Every job comes out as structured data. The exact schema (JSON field names) is b
 > mode, jobs are deduplicated keeping the `myfeed` copy first, so shared jobs keep
 > the richer fields.
 
-> **What's *not* available:** the client's **average hourly rate** and **total
-> hours billed** are not in any feed payload — Upwork only shows them on the
-> single job page, which sits behind a Cloudflare bot wall the automated browser
-> can't pass. So those two fields can't be exported.
+> **Client average hourly rate & total hours billed** are not in any feed
+> payload — Upwork only ships them on the **single job page**. The default
+> background browser can't open that page (Cloudflare blocks it), but
+> [`--attach`](#6-bypass-cloudflare-for-search--single-jobs---attach) **can**, so
+> these fields *are* exported when you fetch a single job with `--attach`.
 
 It can export any of your Find Work feeds:
 
@@ -95,10 +96,11 @@ It can export any of your Find Work feeds:
 
 …or a single job from its URL.
 
-> **No keyword search.** Upwork puts the search page behind a Cloudflare bot
-> challenge that blocks automated browsers, so search isn't supported. The feeds
-> above are *not* blocked. Set up Saved Searches on Upwork (they power `myfeed`)
-> to get keyword-targeted results.
+> **Keyword search** sits behind the same Cloudflare bot challenge that blocks the
+> default background browser, so the feeds above are the easy path (set up Saved
+> Searches on Upwork — they power `myfeed`). To export search results directly,
+> use [`--attach`](#6-bypass-cloudflare-for-search--single-jobs---attach) with a
+> search URL; it runs through your own Chrome, which Cloudflare lets through.
 
 ## Requirements
 
@@ -167,6 +169,71 @@ upwork-feed-fetcher recent --pages 3   # 3 pages
 upwork-feed-fetcher "https://www.upwork.com/jobs/~021234567890abcdef"
 ```
 
+A single job needs `--attach` (next section) — Cloudflare blocks the default
+background browser on job pages. Attaching also unlocks the client's **average
+hourly rate** and **total hours billed**, which only appear on the job page.
+
+### 6. Bypass Cloudflare for search & single jobs (`--attach`)
+
+The default mode launches its own Chrome. Upwork's **search** and **single‑job**
+pages sit behind a strict Cloudflare bot check that detects an automated browser
+and never lets it in — the "Just a moment…" challenge loops forever, even with
+`--gui`. (Detection is at the automation layer: Chrome's `--enable-automation`
+flag plus the DevTools "Runtime" signal the tool needs to read the page. The feeds
+in section 2 are *not* affected.)
+
+The fix is to **attach to your own Chrome** — a real browser you control, which
+clears Cloudflare normally — instead of launching one. The tool connects over
+Chrome's debug port and reads the page; nothing automated goes through the gate,
+and your browser is never closed or driven through the challenge.
+
+**Step 1 — start your own Chrome with a debug port and a dedicated profile.**
+Chrome 136+ ignores the debug port on your *default* profile (anti cookie‑theft),
+so you must point it at a separate `--user-data-dir`:
+
+```powershell
+# Windows
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="$env:LOCALAPPDATA\upwork-feed-fetcher\attach-profile"
+```
+
+```sh
+# macOS
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/.upwork-attach-profile"
+
+# Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.upwork-attach-profile"
+```
+
+**Step 2 — sign in to Upwork once** in that window (solve the Cloudflare check
+yourself). It's a dedicated profile, so this is a one‑time login; it persists and
+is reused on every later `--attach` run.
+
+**Step 3 — fetch with `--attach`:**
+
+```sh
+# search — pass any Upwork search URL
+upwork-feed-fetcher --attach "https://www.upwork.com/nx/search/jobs/?q=flutter"
+
+# a single job — now includes the client's avg hourly rate & total hours
+upwork-feed-fetcher --attach "https://www.upwork.com/jobs/~021234567890abcdef"
+
+# feeds work through your session too
+upwork-feed-fetcher --attach recent
+```
+
+**Most reliable — `--current`.** If a tool‑initiated navigation still gets
+challenged, open the page yourself in that Chrome window, then let the tool read
+whatever tab is already open. This removes *all* automated navigation through
+Cloudflare:
+
+```sh
+# navigate to the search/job in your Chrome window first, then:
+upwork-feed-fetcher --attach --current
+```
+
+If no debug Chrome is running, `--attach` prints the exact command to start one.
+Use `--attach-port` if you ran Chrome on a port other than `9222`.
+
 ### Choosing the output
 
 ```sh
@@ -185,6 +252,9 @@ folder.
 | `--output` / `--out` | auto | output file (or name prefix when multiple formats) |
 | `--format` | `json` | `json`, `csv`, `xml`, `all`, or a comma list like `json,csv` |
 | `--pages` | `1` | pages to load per feed (clicks "Load More" `pages−1` times) |
+| `--attach` | off | attach to **your own** running Chrome (debug port) instead of launching one — the way to reach search & single‑job pages past Cloudflare (see section 6) |
+| `--attach-port` | `9222` | debug endpoint for `--attach` (e.g. `9222`, `:9222`, `host:9222`, or a full `ws://…` URL) |
+| `--current` | off | with `--attach`: read the Upwork tab you already have open instead of navigating (most reliable past Cloudflare) |
 | `--gui` | off | show the browser window (handy to watch a run) |
 | `--hold` | off | do the action, then keep the window open until Ctrl+C (manual poking) |
 | `--timeout` | `90s` | how long to wait for a page to load |
